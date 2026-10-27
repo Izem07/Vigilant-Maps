@@ -1,0 +1,33 @@
+name: vigilant
+description: Navigation with crowdsourced speed trap alerts.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Map & navigation
+  apple_maps_flutter: ^1.4.0
+  geolocator: ^13.0.0
+  http: ^1.2.0
+
+  # Crowdsourced traps
+  firebase_core: ^3.6.0
+  cloud_firestore: ^5.4.0
+
+  # Alerts
+  audioplayers: ^6.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/sounds/

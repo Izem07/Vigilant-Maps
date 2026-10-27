@@ -1,0 +1,31 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+*.iml
+.idea/
+.vscode/
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+**/xcuserdata/
+*.ipa
+
+# Firebase functions
+functions/node_modules/
+.firebase/
+firebase-debug.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

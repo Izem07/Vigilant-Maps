@@ -1,0 +1,89 @@
+# Builds an unsigned Vigilant.ipa on a GitHub-hosted Mac, ready for
+# Sideloadly / AltStore to re-sign with your Apple ID.
+#
+# Firebase config: uses ./GoogleService-Info.plist from the repo, or (if you'd
+# rather not commit it) a repo secret:
+#   GOOGLE_SERVICE_INFO_PLIST  - base64 of GoogleService-Info.plist
+#   (PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes("GoogleService-Info.plist")) | Set-Clipboard)
+name: Build iOS (unsigned)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate ios/ if it isn't committed
+        run: |
+          if [ ! -d ios ]; then
+            flutter create --platforms=ios --org com.vigilant .
+          fi
+
+      - name: Configure Info.plist and Podfile
+        run: |
+          PLIST=ios/Runner/Info.plist
+          pb() { /usr/libexec/PlistBuddy -c "$1" "$PLIST" 2>/dev/null || true; }
+          pb "Delete :NSLocationWhenInUseUsageDescription"
+          pb "Delete :NSLocationAlwaysAndWhenInUseUsageDescription"
+          pb "Delete :UIBackgroundModes"
+          pb "Delete :io.flutter.embedded_views_preview"
+          pb "Add :io.flutter.embedded_views_preview bool true"
+          pb "Add :NSLocationWhenInUseUsageDescription string Vigilant uses your location for turn-by-turn navigation and to warn you of reported speed traps."
+          pb "Add :NSLocationAlwaysAndWhenInUseUsageDescription string Vigilant keeps warning you of reported speed traps while navigating in the background."
+          pb "Add :UIBackgroundModes array"
+          pb "Add :UIBackgroundModes:0 string location"
+          pb "Add :UIBackgroundModes:1 string audio"
+          # Must match BUNDLE_ID in GoogleService-Info.plist
+          sed -i '' -E 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]*vigilant;/PRODUCT_BUNDLE_IDENTIFIER = com.vigilant.app;/' ios/Runner.xcodeproj/project.pbxproj
+          # Firebase requires iOS 13+
+          sed -i '' -E "s/^#? *platform :ios, '[0-9.]+'/platform :ios, '13.0'/" ios/Podfile
+
+      - name: Add GoogleService-Info.plist
+        env:
+          GSI: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          if [ -n "$GSI" ]; then
+            echo "$GSI" | base64 --decode > ios/Runner/GoogleService-Info.plist
+          elif [ -f GoogleService-Info.plist ]; then
+            cp GoogleService-Info.plist ios/Runner/GoogleService-Info.plist
+          elif [ ! -f ios/Runner/GoogleService-Info.plist ]; then
+            echo "::error::No GoogleService-Info.plist (app would crash on launch)"; exit 1
+          fi
+          # Register the file in the Runner target so it's bundled.
+          gem install xcodeproj --no-document
+          ruby -e '
+            require "xcodeproj"
+            p = Xcodeproj::Project.open("ios/Runner.xcodeproj")
+            t = p.targets.find { |x| x.name == "Runner" }
+            g = p.main_group["Runner"]
+            unless g.files.any? { |f| f.path == "GoogleService-Info.plist" }
+              ref = g.new_reference("GoogleService-Info.plist")
+              t.resources_build_phase.add_file_reference(ref)
+              p.save
+            end'
+
+      - run: flutter pub get
+
+      - name: Build unsigned app
+        run: flutter build ipa --release --no-codesign
+
+      - name: Package .ipa
+        run: |
+          mkdir -p out/Payload
+          cp -R build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app out/Payload/
+          cd out && zip -qr Vigilant.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vigilant-ipa
+          path: out/Vigilant.ipa
