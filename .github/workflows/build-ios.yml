@@ -74,6 +74,9 @@ jobs:
 
       - run: flutter pub get
 
+      - name: Generate app icon
+        run: dart run flutter_launcher_icons
+
       - name: Build unsigned app
         run: flutter build ipa --release --no-codesign
 
