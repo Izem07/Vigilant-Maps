@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 
 import '../services/radar_service.dart';
 import '../services/router_service.dart';
+import '../services/search_service.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -41,6 +42,12 @@ class _MapScreenState extends State<MapScreen> {
   StreamSubscription<List<RadarTrap>>? _radarSub;
   StreamSubscription<Position>? _positionSub;
 
+  // Search
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
+  List<Place> _searchResults = [];
+  bool _searching = false;
+
   bool get _isNavigating => _route != null;
 
   @override
@@ -54,6 +61,8 @@ class _MapScreenState extends State<MapScreen> {
     _positionSub?.cancel();
     _radarSub?.cancel();
     _audioPlayer.dispose();
+    _searchController.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -185,6 +194,31 @@ class _MapScreenState extends State<MapScreen> {
         'speed_trap' => 'Speed trap',
         _ => 'Police',
       };
+
+  // ------------------------------------------------------------------ Search
+
+  Future<void> _runSearch(String query) async {
+    if (query.trim().isEmpty || _searching) return;
+    setState(() => _searching = true);
+    final results = await SearchService.search(query, _currentLocation);
+    if (!mounted) return;
+    setState(() {
+      _searching = false;
+      _searchResults = results;
+    });
+    if (results.isEmpty) _toast('No results for "$query".');
+  }
+
+  void _selectPlace(Place place) {
+    _searchFocus.unfocus();
+    _clearSearch();
+    _startRoute(place.location);
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() => _searchResults = []);
+  }
 
   // -------------------------------------------------------------- Navigation
 
@@ -318,17 +352,7 @@ class _MapScreenState extends State<MapScreen> {
           ),
 
           if (_isNavigating) _buildInstructionCard(),
-          if (!_isNavigating)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 12,
-              left: 16,
-              right: 16,
-              child: _panel(const Text(
-                'Long-press the map to set a destination',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white70),
-              )),
-            ),
+          if (!_isNavigating) _buildSearch(),
 
           Positioned(
             bottom: 30,
@@ -356,6 +380,98 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSearch() {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 12,
+      left: 16,
+      right: 16,
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF1C1C1E).withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white24),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _searchController,
+              focusNode: _searchFocus,
+              textInputAction: TextInputAction.search,
+              style: const TextStyle(color: Colors.white, fontSize: 17),
+              decoration: InputDecoration(
+                hintText: 'Search address or place',
+                hintStyle: const TextStyle(color: Colors.white54),
+                prefixIcon: const Icon(Icons.search, color: Colors.white54),
+                suffixIcon: _searching
+                    ? const Padding(
+                        padding: EdgeInsets.all(14),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : (_searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white54),
+                            onPressed: _clearSearch,
+                          )
+                        : null),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              onChanged: (_) => setState(() {}),
+              onSubmitted: _runSearch,
+            ),
+            if (_searchResults.isNotEmpty) ...[
+              const Divider(height: 1, color: Colors.white24),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.45,
+                ),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  itemCount: _searchResults.length,
+                  separatorBuilder: (_, __) =>
+                      const Divider(height: 1, color: Colors.white12),
+                  itemBuilder: (_, i) {
+                    final p = _searchResults[i];
+                    final miles = Geolocator.distanceBetween(
+                          _currentLocation.latitude,
+                          _currentLocation.longitude,
+                          p.location.latitude,
+                          p.location.longitude,
+                        ) /
+                        1609.34;
+                    return ListTile(
+                      leading:
+                          const Icon(Icons.place, color: Color(0xFFFF453A)),
+                      title: Text(p.title,
+                          style: const TextStyle(color: Colors.white)),
+                      subtitle: Text(
+                        p.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white54),
+                      ),
+                      trailing: Text(
+                        '${miles.toStringAsFixed(miles < 10 ? 1 : 0)} mi',
+                        style: const TextStyle(color: Colors.white54),
+                      ),
+                      onTap: () => _selectPlace(p),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
