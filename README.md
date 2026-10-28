@@ -16,8 +16,8 @@
 - **Apple Maps**: native iOS map rendering, no API key needed
 - **Address search**: find places and addresses through OpenStreetMap (Nominatim)
 - **Turn-by-turn navigation**: shows the next turn and the distance to it, and recalculates the route if you go off course
-- **Crowdsourced trap reports**: tap once to report police at your location, and every nearby driver sees it live
-- **Proximity alerts**: an on-screen warning and a chime when a reported trap is within about half a mile
+- **Crowdsourced reports**: report police, speed cameras or road hazards at your location, and every nearby driver sees them live
+- **Proximity alerts**: an on-screen warning and a chime when a reported police unit, camera or hazard is within about half a mile
 - **Self-expiring reports**: reports disappear after 30 minutes
 
 ## How to use
@@ -25,7 +25,7 @@
 | Action | How |
 |---|---|
 | Set a destination | Type in the search bar and press Enter, then tap a result. Or long-press the map. |
-| Report police | Tap the green 🚓 button |
+| Report something | Tap the green 🚓 button, then choose Police, Speed camera or Hazard |
 | See a report's details | Tap a pin on the map |
 | End navigation | Tap the red button in the bottom-left corner |
 
@@ -38,10 +38,10 @@
 | Location | [`geolocator`](https://pub.dev/packages/geolocator) | Free |
 | Routing | [OSRM](https://project-osrm.org/) | Free |
 | Search | [Nominatim](https://nominatim.org/) (OpenStreetMap) | Free |
-| Trap database | Firebase Cloud Firestore | Free tier |
+| Report database | Firebase Cloud Firestore + Anonymous Auth | Free tier |
 | iOS builds | GitHub Actions (macOS runner) | Free for public repos |
 
-### Finding nearby traps cheaply
+### Finding nearby reports cheaply
 
 Each report is tagged with a 5-character **geohash**, a grid square about 5 km across. The app listens only to the driver's square and the 8 around it, an area about 15 km wide. It switches squares as the driver moves. Database reads stay small, so the app fits within Firebase's free tier.
 
@@ -90,17 +90,30 @@ See [`SETUP.md`](SETUP.md) for the `Info.plist` keys and the Podfile setting.
 ## Firebase setup
 
 1. Create a Firebase project, enable **Cloud Firestore**, and register an iOS app with the bundle ID `com.vigilant.app`.
-2. Put the downloaded `GoogleService-Info.plist` in the repo root. CI copies it into the iOS project.
-3. Deploy the security rules and cleanup function:
+2. Enable **Authentication → Sign-in method → Anonymous**. Each report is tagged with the reporter's anonymous ID, and the rules reject reports without one.
+3. Put the downloaded `GoogleService-Info.plist` in the repo root. CI copies it into the iOS project.
+4. Deploy the security rules. `.firebaserc` already points at the project.
    ```bash
-   firebase deploy --only firestore:rules,functions
+   npm install -g firebase-tools
+   firebase login
+   firebase deploy --only firestore:rules
    ```
-   The scheduled cleanup function needs the Blaze plan. Without it, the app still hides reports older than 30 minutes.
+5. Optional: deploy the cleanup function with `firebase deploy --only functions`. It needs the Blaze plan. Without it, the app still hides reports older than 30 minutes.
+
+### `reports` document schema
+
+| Field | Type | Notes |
+|---|---|---|
+| `latitude`, `longitude` | number | Where the report was made |
+| `geohash` | string | 5-character grid square, used for nearby queries |
+| `type` | string | `cop`, `camera` or `hazard` |
+| `timestamp` | server timestamp | Used for the 30-minute expiry |
+| `reporterId` | string | Anonymous Firebase Auth UID; the rules check it matches the sender |
 
 ## Roadmap
 
 - [ ] Alert sound (`assets/sounds/radar_alert.mp3`)
-- [ ] Report types: speed camera and speed trap, alongside police
+- [x] Report types: police, speed camera, hazard
 - [ ] Upvote or dismiss reports ("still there?")
 - [ ] Voice directions
 - [ ] Self-hosted OSRM for public release

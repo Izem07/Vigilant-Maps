@@ -36,10 +36,10 @@ class _MapScreenState extends State<MapScreen> {
   Set<Polyline> _polylines = {};
 
   // Radar
-  List<RadarTrap> _traps = [];
+  List<Report> _reports = [];
   final Set<String> _alertedTrapIds = {};
   String? _radarCell;
-  StreamSubscription<List<RadarTrap>>? _radarSub;
+  StreamSubscription<List<Report>>? _radarSub;
   StreamSubscription<Position>? _positionSub;
 
   // Search
@@ -124,17 +124,17 @@ class _MapScreenState extends State<MapScreen> {
 
     _radarSub?.cancel();
     _radarSub = _radarService
-        .streamNearbyTraps(pos.latitude, pos.longitude)
-        .listen((traps) {
+        .streamNearbyReports(pos.latitude, pos.longitude)
+        .listen((reports) {
       if (!mounted) return;
-      setState(() => _traps = traps);
+      setState(() => _reports = reports);
       _checkRadarProximity(_currentLocation);
     }, onError: (_) => _toast('Could not load nearby reports.'));
   }
 
   /// Alerts once per trap when it first comes within range.
   void _checkRadarProximity(LatLng userPos) {
-    for (final trap in _traps) {
+    for (final trap in _reports) {
       if (_alertedTrapIds.contains(trap.id)) continue;
       final dist = Geolocator.distanceBetween(
         userPos.latitude,
@@ -149,7 +149,7 @@ class _MapScreenState extends State<MapScreen> {
             .play(AssetSource('sounds/radar_alert.mp3'))
             .catchError((_) {});
         _toast(
-          '⚠️ ${_labelFor(trap.type).toUpperCase()} REPORTED '
+          '⚠️ ${trap.type.label.toUpperCase()} REPORTED '
           '${(dist / 1609.34).toStringAsFixed(1)} MI AHEAD',
           color: Colors.redAccent,
         );
@@ -157,26 +157,81 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  Future<void> _reportTrap() async {
+  static IconData _reportIcon(ReportType t) => switch (t) {
+        ReportType.cop => Icons.local_police,
+        ReportType.camera => Icons.photo_camera,
+        ReportType.hazard => Icons.warning_amber_rounded,
+      };
+
+  static const _reportSubtitles = {
+    ReportType.cop: 'Active unit / speed trap',
+    ReportType.camera: 'Fixed location',
+    ReportType.hazard: 'Debris or road obstruction',
+  };
+
+  void _showReportMenu() {
+    // Capture the spot now; the car keeps moving while the menu is open.
+    final here = _currentLocation;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text('Report here',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold)),
+              ),
+              for (final type in ReportType.values)
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: const Color(0xFF30D158),
+                    child: Icon(_reportIcon(type), color: Colors.black),
+                  ),
+                  title: Text(type.label,
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 17)),
+                  subtitle: Text(_reportSubtitles[type]!,
+                      style: const TextStyle(color: Colors.white54)),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _sendReport(type, here);
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _sendReport(ReportType type, LatLng at) async {
     try {
-      await _radarService.reportTrap(
-        _currentLocation.latitude,
-        _currentLocation.longitude,
-        'cop',
-      );
-      _toast('Report sent. Thanks!', color: const Color(0xFF30D158));
+      await _radarService.reportHazard(at.latitude, at.longitude, type);
+      _toast('${type.label} reported. Thanks!',
+          color: const Color(0xFF30D158));
     } catch (_) {
       _toast('Report failed. Check your connection.');
     }
   }
 
   Set<Annotation> get _trapAnnotations => {
-        for (final t in _traps)
+        for (final t in _reports)
           Annotation(
             annotationId: AnnotationId('trap_${t.id}'),
             position: LatLng(t.latitude, t.longitude),
             infoWindow: InfoWindow(
-              title: _labelFor(t.type),
+              title: t.type.label,
               snippet:
                   '${DateTime.now().difference(t.timestamp).inMinutes} min ago',
             ),
@@ -187,12 +242,6 @@ class _MapScreenState extends State<MapScreen> {
             position: _destination!,
             infoWindow: const InfoWindow(title: 'Destination'),
           ),
-      };
-
-  static String _labelFor(String type) => switch (type) {
-        'camera' => 'Speed camera',
-        'speed_trap' => 'Speed trap',
-        _ => 'Police',
       };
 
   // ------------------------------------------------------------------ Search
@@ -360,7 +409,7 @@ class _MapScreenState extends State<MapScreen> {
             child: FloatingActionButton(
               heroTag: 'report',
               backgroundColor: const Color(0xFF30D158),
-              onPressed: _reportTrap,
+              onPressed: _showReportMenu,
               child: const Icon(Icons.local_police, color: Colors.black),
             ),
           ),

@@ -1,16 +1,19 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /traps/{trapId} {
+    match /reports/{reportId} {
       allow read: if true;
-      // Validate shape on create; no client updates/deletes (cleanup runs server-side).
-      allow create: if request.resource.data.keys().hasOnly(
-                         ['latitude', 'longitude', 'geohash', 'g5', 'type', 'timestamp'])
+      // Must be signed in (anonymous auth is fine) and report as yourself.
+      // No client updates/deletes; expired reports are purged server-side.
+      allow create: if request.auth != null
+                    && request.resource.data.keys().hasOnly(
+                         ['latitude', 'longitude', 'geohash', 'type', 'timestamp', 'reporterId'])
+                    && request.resource.data.reporterId == request.auth.uid
                     && request.resource.data.latitude is number
                     && request.resource.data.longitude is number
-                    && request.resource.data.g5 is string
-                    && request.resource.data.g5.size() == 5
-                    && request.resource.data.type in ['cop', 'camera', 'speed_trap']
+                    && request.resource.data.geohash is string
+                    && request.resource.data.geohash.size() == 5
+                    && request.resource.data.type in ['cop', 'camera', 'hazard']
                     && request.resource.data.timestamp == request.time;
       allow update, delete: if false;
     }

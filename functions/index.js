@@ -1,4 +1,4 @@
-// Deletes trap reports older than 30 minutes. Deploy with: firebase deploy --only functions
+// Deletes reports older than 30 minutes. Deploy with: firebase deploy --only functions
 // Note: scheduled functions require the Blaze (pay-as-you-go) plan, though this
 // workload stays well within the free usage allowance.
 const { onSchedule } = require("firebase-functions/v2/scheduler");
@@ -7,13 +7,13 @@ const { getFirestore, Timestamp } = require("firebase-admin/firestore");
 
 initializeApp();
 
-exports.purgeOldTraps = onSchedule("every 10 minutes", async () => {
+exports.purgeOldReports = onSchedule("every 10 minutes", async () => {
   const db = getFirestore();
   const cutoff = Timestamp.fromMillis(Date.now() - 30 * 60 * 1000);
 
   let deleted = 0;
   while (true) {
-    const snap = await db.collection("traps")
+    const snap = await db.collection("reports")
       .where("timestamp", "<", cutoff)
       .limit(400)
       .get();
@@ -24,5 +24,5 @@ exports.purgeOldTraps = onSchedule("every 10 minutes", async () => {
     await batch.commit();
     deleted += snap.size;
   }
-  console.log(`Purged ${deleted} expired traps`);
+  console.log(`Purged ${deleted} expired reports`);
 });

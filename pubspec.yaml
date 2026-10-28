@@ -18,6 +18,7 @@ dependencies:
   # Crowdsourced traps
   firebase_core: ^3.6.0
   cloud_firestore: ^5.4.0
+  firebase_auth: ^5.3.0
 
   # Alerts
   audioplayers: ^6.1.0
